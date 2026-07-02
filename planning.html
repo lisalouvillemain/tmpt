@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Planning Post-Production</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Mono',monospace,Arial,sans-serif;background:#e8f0fc;color:#0f2044;min-height:100vh;display:flex;flex-direction:column}
+.topbar{background:#0f2044;border-bottom:2px solid #1a3a6e;padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:200;flex-shrink:0}
+.logo{font-size:16px;font-weight:800;letter-spacing:.1em;color:#f0f4ff}
+.meta{font-size:10px;color:rgba(240,244,255,.4);letter-spacing:.06em}
+.nav-btn{padding:4px 14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:3px;color:rgba(240,244,255,.6);font-family:monospace;font-size:10px;cursor:pointer;transition:all .15s}
+.nav-btn.on{background:rgba(59,130,246,.4);border-color:#3b82f6;color:#fff;font-weight:700}
+.upd{font-size:9px;color:rgba(240,244,255,.3);margin-left:auto}
+.content{flex:1;padding:12px;overflow:hidden;display:flex;flex-direction:column}
+.gantt-outer{flex:1;overflow:auto;background:#fff;border:1px solid #c8daf2;border-radius:6px;box-shadow:0 1px 6px rgba(15,32,68,.08)}
+.g-row{display:flex;border-bottom:1px solid #e8f0fc}
+.g-row:last-child{border-bottom:none}
+.g-lbl{width:180px;min-width:180px;flex-shrink:0;padding:0 8px;font-size:9px;font-weight:700;text-transform:uppercase;background:#f0f4ff;position:sticky;left:0;z-index:10;display:flex;align-items:center;overflow:hidden;border-right:2px solid #c8daf2}
+.g-cells{flex:1;position:relative;min-width:0}
+.g-header-wrap{position:sticky;top:0;z-index:20;background:#fff}
+.g-mth-row{display:flex;margin-left:180px}
+.g-mth{height:22px;flex-shrink:0;display:flex;align-items:center;padding:0 6px;font-size:10px;font-weight:700;color:#60a5fa;text-transform:uppercase;background:#0f2044;border-right:2px solid #1a3a6e;overflow:hidden}
+.g-day-row{display:flex;margin-left:180px;border-bottom:2px solid #c8daf2}
+.g-day{flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-right:1px solid #e8f0fc}
+.g-wk-row{display:flex;margin-left:180px;border-bottom:2px solid #c8daf2}
+.g-wk{flex-shrink:0;display:flex;align-items:center;padding:0 4px;font-size:8px;font-weight:700;color:#334155;background:#fff;border-right:1px solid #e8f0fc;overflow:hidden}
+.g-today-line{position:absolute;top:0;bottom:0;width:2px;background:rgba(59,130,246,.5);z-index:5;pointer-events:none}
+.loader{display:flex;align-items:center;justify-content:center;flex:1;flex-direction:column;gap:12px;color:#60a5fa;font-size:13px}
+.spinner{width:32px;height:32px;border:3px solid rgba(59,130,246,.2);border-top-color:#3b82f6;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error{color:#ef4444;font-size:12px;text-align:center;padding:20px}
+@media print{.topbar{position:relative}.gantt-outer{overflow:visible;border:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="logo" id="ttl">Planning</span>
+  <span class="meta">Post-Production</span>
+  <div style="display:flex;gap:6px;margin-left:12px">
+    <button class="nav-btn on" id="btnDay" onclick="showView('day')">Jours</button>
+    <button class="nav-btn" id="btnWeek" onclick="showView('week')">Semaines</button>
+  </div>
+  <span class="upd" id="updlbl"></span>
+</div>
+<div class="content" id="content">
+  <div class="loader"><div class="spinner"></div><span>Chargement du planning…</span></div>
+</div>
+
+<script>
+const MOIS_L=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const MOIS_S=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+const JOURS=['L','M','M','J','V','S','D'];
+const DAY_PX=28,WEEK_PX=56,LABEL_W=180,ROW_H=34;
+
+function getParam(k){return new URLSearchParams(location.search).get(k);}
+function localDateStr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function parseLocalDate(s){const[y,m,d]=s.split('-');return new Date(+y,+m-1,+d);}
+function isLightColor(hex){if(!hex||!hex.startsWith('#'))return false;const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return(r*299+g*587+b*114)/1000>140;}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+let _curView='day';
+function showView(v){
+  _curView=v;
+  const d=document.getElementById('viewDay'),w=document.getElementById('viewWeek');
+  if(d)d.style.display=v==='day'?'flex':'none';
+  if(w)w.style.display=v==='week'?'flex':'none';
+  document.getElementById('btnDay').className='nav-btn'+(v==='day'?' on':'');
+  document.getElementById('btnWeek').className='nav-btn'+(v==='week'?' on':'');
+}
+
+async function load(){
+  const gistId=getParam('gist');
+  const gistFile=getParam('file')||'tmpt-envois.json';
+  if(!gistId){
+    document.getElementById('content').innerHTML='<div class="error">Paramètre <code>?gist=</code> manquant dans l\'URL.</div>';
+    return;
+  }
+  try{
+    const r=await fetch(`https://api.github.com/gists/${gistId}`,{headers:{Accept:'application/vnd.github.v3+json'}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    const content=d.files[gistFile]?.content;
+    if(!content)throw new Error('Fichier '+gistFile+' introuvable dans le Gist.');
+    const ED=JSON.parse(content);
+    const updAt=d.updated_at?new Date(d.updated_at).toLocaleString('fr-FR'):'';
+    document.getElementById('updlbl').textContent=updAt?'Mis à jour : '+updAt:'';
+    document.getElementById('ttl').textContent=esc(ED.projectTitle||'TMPT');
+    document.title=(ED.projectTitle||'TMPT')+' — Planning';
+    render(ED);
+  }catch(e){
+    document.getElementById('content').innerHTML='<div class="error">Erreur de chargement : '+esc(e.message)+'</div>';
+  }
+}
+
+function render(ED){
+  const blocs=(ED.ganttBlocs||[]).filter(b=>b.start&&b.end&&b.start!=='2027-01-01'&&b.end!=='2027-01-01');
+  const depts=(ED.ganttDepts&&ED.ganttDepts.length)?ED.ganttDepts:[];
+  const dcolors=ED.ganttDeptColors||{};
+  const rowHeights=ED.ganttRowHeights||{};
+
+  if(!blocs.length){
+    document.getElementById('content').innerHTML='<div class="error">Aucun bloc dans le planning.</div>';
+    return;
+  }
+
+  let minTs=Infinity,maxTs=-Infinity;
+  blocs.forEach(b=>{
+    const s=parseLocalDate(b.start).getTime(),e=parseLocalDate(b.end).getTime();
+    if(s<minTs)minTs=s;if(e>maxTs)maxTs=e;
+  });
+  const startDate=new Date(minTs);startDate.setDate(1);startDate.setHours(0,0,0,0);
+  const endDate=new Date(maxTs);endDate.setDate(endDate.getDate()+7);endDate.setHours(0,0,0,0);
+
+  const days=[];
+  const cur=new Date(startDate);
+  while(cur<=endDate){days.push(localDateStr(cur));cur.setDate(cur.getDate()+1);}
+
+  const todayStr=localDateStr(new Date());
+
+  // Build blocMap
+  const blocMap={};
+  depts.forEach(dept=>{blocMap[dept]={};});
+  blocs.forEach(b=>{
+    if(!blocMap[b.dept])blocMap[b.dept]={};
+    const bs=parseLocalDate(b.start),be=parseLocalDate(b.end);
+    let isFirst=true;
+    const t=new Date(bs);
+    while(t<=be){
+      const dow=t.getDay();
+      if(!b.skipWE||(dow!==0&&dow!==6)){
+        const ds=localDateStr(t);
+        blocMap[b.dept][ds]={color:b.color||dcolors[b.dept]||'#4a6abf',label:b.label||b.dept,isFirst};
+        isFirst=false;
+      }
+      t.setDate(t.getDate()+1);
+    }
+  });
+
+  // ── DAY VIEW ─────────────────────────────────────────────
+  function buildDayView(){
+    const totalW=LABEL_W+days.length*DAY_PX;
+    let curM=-1,mCount=0;const mGroups=[];
+    days.forEach(ds=>{
+      const m=parseInt(ds.slice(5,7))-1;
+      if(m!==curM){if(curM!==-1)mGroups.push({m:curM,count:mCount});curM=m;mCount=1;}else mCount++;
+    });
+    mGroups.push({m:curM,count:mCount});
+    let hMonths='<div class="g-mth-row">';
+    mGroups.forEach(g=>{hMonths+=`<div class="g-mth" style="width:${g.count*DAY_PX}px">${MOIS_L[g.m]}</div>`;});
+    hMonths+='</div>';
+    let hDays='<div class="g-day-row">';
+    days.forEach(ds=>{
+      const dow=parseLocalDate(ds).getDay();
+      const d=parseInt(ds.slice(8));
+      const isWe=dow===0||dow===6,isToday=ds===todayStr;
+      const dowIdx=dow===0?6:dow-1;
+      const wBg=isToday?'#dbeafe':isWe?'#f1f5f9':'#fff';
+      const nColor=isToday?'#1d4ed8':isWe?'#94a3b8':'#334155';
+      const lColor=isToday?'#3b82f6':isWe?'#cbd5e1':'#94a3b8';
+      hDays+=`<div class="g-day" style="width:${DAY_PX}px;height:32px;background:${wBg};border-right:1px solid ${isWe?'#c8daf2':'#e8f0fc'}"><span style="font-size:7px;color:${lColor}">${JOURS[dowIdx]}</span><span style="font-size:9px;font-weight:${isToday?700:500};color:${nColor}">${d}</span></div>`;
+    });
+    hDays+='</div>';
+    const todayIdx=days.indexOf(todayStr);
+    const todayLine=todayIdx>=0?`<div class="g-today-line" style="left:${todayIdx*DAY_PX+DAY_PX/2}px"></div>`:'';
+    let rowsHtml='';
+    depts.forEach(dept=>{
+      const rc=dcolors[dept]||'#4a6abf';
+      const dm=blocMap[dept]||{};
+      const rowH=rowHeights[dept]||ROW_H;
+      const blocH=Math.max(14,rowH-8);
+      let rowBlocs='',segStart=-1,segColor='',segLabel='';
+      for(let i=0;i<=days.length;i++){
+        const ds=days[i],cell=ds?dm[ds]:null;
+        if(cell&&segStart<0){segStart=i;segColor=cell.color;segLabel=cell.label;}
+        else if((!cell||i===days.length)&&segStart>=0){
+          const sw=(i-segStart)*DAY_PX-2,sx=segStart*DAY_PX+1;
+          const tc=isLightColor(segColor)?'#000':'#fff';
+          const isVert=sw<46&&blocH>32;
+          if(sw>0){
+            if(isVert)rowBlocs+=`<div style="position:absolute;left:${sx}px;top:4px;height:${blocH}px;width:${sw}px;background:${segColor};border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:6px 2px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.2)"><span style="font-family:monospace;font-size:8px;font-weight:700;color:${tc};writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-height:100%">${esc(segLabel)}</span></div>`;
+            else rowBlocs+=`<div style="position:absolute;left:${sx}px;top:3px;height:${blocH}px;width:${sw}px;background:${segColor};border-radius:2px;display:flex;align-items:center;padding:0 5px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.15)"><span style="font-family:monospace;font-size:8px;font-weight:700;color:${tc};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(segLabel)}</span></div>`;
+          }
+          segStart=-1;
+          if(cell){segStart=i;segColor=cell.color;segLabel=cell.label;}
+        }
+      }
+      rowsHtml+=`<div class="g-row" style="height:${rowH}px"><div class="g-lbl" style="height:${rowH}px;border-left:4px solid ${rc}">${esc(dept)}</div><div class="g-cells" style="height:${rowH}px">${rowBlocs}</div></div>`;
+    });
+    return `<div style="min-width:${totalW}px;display:flex;flex-direction:column"><div class="g-header-wrap">${hMonths}${hDays}</div><div style="position:relative">${todayLine}${rowsHtml}</div></div>`;
+  }
+
+  // ── WEEK VIEW ─────────────────────────────────────────────
+  function buildWeekView(){
+    const weeks=[];
+    const weekOf=ds=>{const idx=days.indexOf(ds);return Math.floor(idx/7);};
+    let curW=-1;
+    days.forEach(ds=>{
+      const dow=parseLocalDate(ds).getDay();
+      if(dow===1||curW===-1){weeks.push(ds);curW++;}
+    });
+    const totalW=LABEL_W+weeks.length*WEEK_PX;
+    let curM=-1,mCount=0;const mGroups=[];
+    weeks.forEach(wds=>{
+      const m=parseInt(wds.slice(5,7))-1;
+      if(m!==curM){if(curM!==-1)mGroups.push({m:curM,count:mCount});curM=m;mCount=1;}else mCount++;
+    });
+    mGroups.push({m:curM,count:mCount});
+    let hW1='<div class="g-mth-row">';
+    mGroups.forEach(g=>{hW1+=`<div class="g-mth" style="width:${g.count*WEEK_PX}px">${MOIS_S[g.m]}</div>`;});
+    hW1+='</div>';
+    let hW2='<div class="g-wk-row">';
+    weeks.forEach(wds=>{
+      const d=parseInt(wds.slice(8));
+      hW2+=`<div class="g-wk" style="width:${WEEK_PX}px;height:28px">${d}</div>`;
+    });
+    hW2+='</div>';
+    let rowsW='';
+    depts.forEach(dept=>{
+      const rc=dcolors[dept]||'#4a6abf';
+      const dm=blocMap[dept]||{};
+      const rowH=rowHeights[dept]||ROW_H;
+      const blocH=Math.max(14,rowH-8);
+      const cellMap={};
+      Object.entries(dm).forEach(([ds,info])=>{const wi=days.indexOf(ds);const wk=Math.floor(wi/7);if(wi>=0&&cellMap[wk]===undefined)cellMap[wk]=info;});
+      let rowBlocs='',segStart=-1,segColor='',segLabel='';
+      for(let i=0;i<=weeks.length;i++){
+        const cell=i<weeks.length?cellMap[i]:null;
+        if(cell&&segStart<0){segStart=i;segColor=cell.color;segLabel=cell.label;}
+        else if(!cell&&segStart>=0){
+          const sw=(i-segStart)*WEEK_PX-2,sx=segStart*WEEK_PX+1;
+          const tc=isLightColor(segColor)?'#000':'#fff';
+          rowBlocs+=`<div style="position:absolute;left:${sx}px;top:3px;height:${blocH}px;width:${sw}px;background:${segColor};border-radius:2px;display:flex;align-items:center;padding:0 6px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.2)"><span style="font-family:monospace;font-size:9px;font-weight:700;color:${tc};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(segLabel)}</span></div>`;
+          segStart=-1;
+          if(cell){segStart=i;segColor=cell.color;segLabel=cell.label;}
+        }
+      }
+      rowsW+=`<div class="g-row" style="height:${rowH}px"><div class="g-lbl" style="height:${rowH}px;border-left:4px solid ${rc}">${esc(dept)}</div><div class="g-cells" style="height:${rowH}px">${rowBlocs}</div></div>`;
+    });
+    return `<div style="min-width:${totalW}px;display:flex;flex-direction:column"><div class="g-header-wrap">${hW1}${hW2}</div><div style="position:relative">${rowsW}</div></div>`;
+  }
+
+  const dayHtml=buildDayView();
+  const weekHtml=buildWeekView();
+  document.getElementById('content').innerHTML=`
+    <div class="gantt-outer" id="viewDay" style="display:flex">${dayHtml}</div>
+    <div class="gantt-outer" id="viewWeek" style="display:none">${weekHtml}</div>`;
+}
+
+load();
+</script>
+</body>
+</html>
