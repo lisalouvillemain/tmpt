@@ -81,7 +81,7 @@ async function load(){
   }
   document.getElementById('content').innerHTML='<div class="loader"><div class="spinner"></div><span>Chargement du planning…</span></div>';
   try{
-    const headers={Accept:'application/vnd.github.v3+json','Cache-Control':'no-cache'};
+    const headers={Accept:'application/vnd.github.v3+json'};
     if(token)headers['Authorization']='token '+token;
     const r=await fetch(`https://api.github.com/gists/${gistId}?_=${Date.now()}`,{headers});
     if(!r.ok)throw new Error('HTTP '+r.status);
